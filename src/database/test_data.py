@@ -1,0 +1,68 @@
+from sqlalchemy import Column, String, BigInteger, Boolean, select, update, func, or_, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
+
+from src.database.base import Base
+
+
+class Test(Base):
+    __tablename__ = 'tests'
+    
+    # id: Matn ID
+    id = Column(String(50), primary_key=True) 
+    test_id = Column(String(50), unique=True, nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    creator_id = Column(BigInteger, nullable=False) 
+    status = Column(Boolean, default=True, nullable=False)
+    answer = Column(String, nullable=False) 
+    
+    def __repr__(self):
+        return f"<Test(id={self.id}, title='{self.title}')>"
+
+
+async def add_new_test(
+    session: AsyncSession,
+    test_id: str,     
+    title: str,
+    answer: str,      
+    creator_id: int
+) -> Test:
+    new_test = Test(
+        id=test_id,     
+        title=title,
+        answer=answer, 
+        creator_id=creator_id,
+        status=True
+    )
+    session.add(new_test)
+    await session.commit()
+    await session.refresh(new_test)
+    return new_test
+
+
+async def get_test_by_id(session: AsyncSession, test_id: str) -> Optional[Test]:
+    stmt = select(Test).where(Test.id == test_id)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+async def deactivate_test(session: AsyncSession, test_id: str) -> bool:
+    stmt = update(Test).where(Test.id == test_id).values(status=False)
+    result = await session.execute(stmt)
+    await session.commit()
+    return result.rowcount > 0 
+
+async def get_inactive_tests(session: AsyncSession) -> list:
+    stmt = select(Test).where(Test.status == False)
+    result = await session.execute(stmt)
+    inactive_tests = result.scalars().all()
+    
+    return inactive_tests
+
+async def delete_test_by_id(session: AsyncSession, test_id: str) -> bool:
+    stmt = delete(Test).where(Test.id == test_id)
+    result = await session.execute(stmt)
+    
+    if result.rowcount > 0:
+        return True
+    else:
+        return False
