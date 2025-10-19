@@ -30,6 +30,7 @@ async def add_new_test(
     new_test = Test(
         id=test_id,     
         title=title,
+        test_id=test_id,
         answer=answer, 
         creator_id=creator_id,
         status=True
