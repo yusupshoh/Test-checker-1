@@ -7,7 +7,7 @@ from aiogram.types import Message, CallbackQuery, ChatMember
 from aiogram.enums import ChatMemberStatus
 
 from config import Config
-from src.keyboards.check import get_subscribe_keyboard # <-- Yangi import
+from src.keyboards.check import get_subscribe_keyboard 
 
 logger = logging.getLogger(__name__)
 

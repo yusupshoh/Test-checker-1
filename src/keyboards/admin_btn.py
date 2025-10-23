@@ -1,4 +1,4 @@
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 
 adminMenu = ReplyKeyboardMarkup(
 	keyboard=[
@@ -13,7 +13,7 @@ adminMenu = ReplyKeyboardMarkup(
 		[
 			KeyboardButton(text="📊 Statistika"),
 			KeyboardButton(text="🗑️ Ma'lumotlarni tozalash")
-		]], 
+		],
+	], 
 	resize_keyboard=True
-	)
-
+)
