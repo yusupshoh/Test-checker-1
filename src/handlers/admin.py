@@ -338,3 +338,60 @@ async def process_data_cleanup(message: Message, state: FSMContext, session_fact
 
     await state.clear()
 
+@router.message(F.text == "📊 Statistika")
+async def send_statistics_report(message: Message, session_factory: async_sessionmaker[AsyncSession]):
+    user_id = message.from_user.id
+
+    async with session_factory() as session:
+        # 1. Admin tekshiruvi
+        if not await get_admin_user_if_exists(session, user_id):
+            await message.answer("❌ Uzr, siz Admin emassiz yoki ruxsatingiz yo'q.")
+            return
+
+        await message.answer("⏳ Statistik ma'lumotlar hisoblanmoqda...")
+
+        try:
+            # 2. Umumiy foydalanuvchilar sonini olish
+            all_users_ids = await get_all_users_ids(session)
+            total_users = len(all_users_ids)
+
+            # 3. Davrlarni aniqlash (Hozirgi vaqtdan boshlab)
+            now_utc = datetime.datetime.now(timezone.utc)
+
+            # Har bir davr uchun timedelta hisoblash
+            periods = {
+                "1 hafta": datetime.timedelta(weeks=1),
+                "1 oy": datetime.timedelta(days=30),
+                "3 oy": datetime.timedelta(days=3 * 30),
+                "6 oy": datetime.timedelta(days=6 * 30),
+            }
+
+            stats_results = {}
+
+            # 4. Har bir davr uchun yangi foydalanuvchilar sonini olish
+            for period_name, delta in periods.items():
+                since_date = now_utc - delta
+                # sign_data.py dan import qilingan funksiya
+                count = await get_new_users_count_since(session, since_date)
+                stats_results[period_name] = count
+
+            # 5. Natijani rasmga mos formatda shakllantirish
+
+            response_text = (
+                f"📈 Bot Statistikasi \n\n"
+                f"👥 Jami obunachilar `{total_users}` ta\n\n"
+
+                f"👤 Oxirgi 1 hafta ichida: `{stats_results['1 hafta']}` ta foydalanuvchi\n"
+                f"👤 Oxirgi 1 oy ichida: `{stats_results['1 oy']}` ta foydalanuvchi\n"
+                f"👤 Oxirgi 3 oy ichida: `{stats_results['3 oy']}` ta foydalanuvchi\n"
+                f"👤 Oxirgi 6 oy ichida: `{stats_results['6 oy']}` ta foydalanuvchi"
+            )
+
+            await message.answer(
+                response_text,
+                parse_mode='Markdown',
+            )
+
+        except Exception as e:
+            await message.answer(f"❌ Statistikani hisoblashda xato yuz berdi: {e}")
+            #logger.error(f"Statistika hisoblashda xato: {e}")
