@@ -121,3 +121,43 @@ async def get_all_admin_ids(session: AsyncSession) -> List[int]:
     stmt = select(User.tg_id).where(User.role == True)
     result = await session.execute(stmt)
     return result.scalars().all()
+
+
+async def get_all_users_creation_dates(session: AsyncSession) -> List[datetime.datetime]:
+    stmt = select(User.created_at)
+    result = await session.execute(stmt)
+    return [row[0] for row in result.all()]
+
+
+async def ensure_primary_admin(
+        session: AsyncSession,
+        tg_id: int,
+        first_name: str,
+        last_name: Optional[str] = None
+) -> bool:
+    existing_user = await get_user(session, tg_id)
+
+    if existing_user is None:
+        new_admin = User(
+            tg_id=tg_id,
+            first_name=first_name,
+            last_name=last_name,
+            role=True,  # Avtomatik admin huquqi
+        )
+        session.add(new_admin)
+        await session.commit()
+        return True
+
+    elif not existing_user.role:
+        # Foydalanuvchi bor, lekin admin emas, uni admin qilamiz
+        update_values = {'role': True}
+        if existing_user.first_name is None: update_values['first_name'] = first_name
+        if existing_user.last_name is None: update_values['last_name'] = last_name
+
+        if update_values:
+            stmt = update(User).where(User.tg_id == tg_id).values(**update_values)
+            await session.execute(stmt)
+            await session.commit()
+            return True
+
+    return False

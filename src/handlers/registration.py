@@ -81,7 +81,7 @@ async def process_last_name(message: Message, state: FSMContext):
     )
     await state.set_state(RS.waiting_for_phone_number)
 
-@router.message(RS.waiting_for_phone_number, F.contact) # 👈 F.contact filtri
+@router.message(RS.waiting_for_phone_number, F.contact) 
 async def process_phone_number_from_contact(
     message: Message,
     state: FSMContext,
@@ -96,7 +96,6 @@ async def process_phone_number_from_contact(
     
     async with session_factory() as session:
         try:
-            # add_new_user endi (User obyekti, yangi ekanligi) ni qaytaradi
             new_user, is_new = await add_new_user(
                 session=session,
                 user_id=tg_id,
@@ -119,14 +118,14 @@ async def process_phone_number_from_contact(
                 for admin_id in admin_ids:
                     try:
                         await bot.send_message(chat_id=admin_id, text=notification_message, parse_mode='HTML')
-                        await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu) 
+                        await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
                         logger.info("New user registered with contact: %s", new_user)
 
                     except Exception as e:
                         logger.error(f"Admin {admin_id}ga xabar yuborishda xato: {e}")
             await state.clear()
             await message.answer(f"✅ Ro'yxatdan o'tish yakunlandi")
-            await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu) 
+            await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
             logger.info("New user registered with contact: %s", new_user)
         except Exception as e:
             
@@ -163,12 +162,12 @@ async def start_profile_edit(message: Message, state: FSMContext, session_factor
     await state.set_state(PS.editing_first_name)
 
 
-@router.message(PS.editing_first_name, F.text)
+@router.message(PS.editing_first_name, F.text, ~F.text.in_({"❌ Bekor qilish"}))
 async def process_edit_first_name(message: Message, state: FSMContext):
     new_first_name = message.text.strip()
     
     if len(new_first_name) < 2 or len(new_first_name) > 255:
-        await message.answer("Ism noto'g'ri. Qayta kiriting.")
+        await message.answer("Qayta kiriting.")
         return
 
     await state.update_data(first_name=new_first_name)
@@ -181,9 +180,7 @@ async def process_edit_first_name(message: Message, state: FSMContext):
     )
     await state.set_state(PS.editing_last_name)
 
-
-# 3. Familiyani qabul qilish
-@router.message(PS.editing_last_name, F.text)
+@router.message(PS.editing_last_name, F.text, ~F.text.in_({"❌ Bekor qilish"}))
 async def process_edit_last_name(message: Message, state: FSMContext):
     new_last_name = message.text.strip()
     
@@ -202,8 +199,6 @@ async def process_edit_last_name(message: Message, state: FSMContext):
     )
     await state.set_state(PS.editing_phone_number)
 
-
-# 4. Raqamni qabul qilish va yangilash
 @router.message(PS.editing_phone_number, F.contact)
 async def process_edit_phone_number(
     message: Message,
@@ -211,13 +206,10 @@ async def process_edit_phone_number(
     session_factory: async_sessionmaker[AsyncSession]
 ):
     new_phone_number = message.contact.phone_number
-    
     user_data = await state.get_data()
     tg_id = user_data['tg_id']
-
-    # Barcha yangi ma'lumotlarni DB ga yangilash
     async with session_factory() as session:
-        updated = await update_user_info( # sign_data.py dagi funksiya
+        updated = await update_user_info( 
             session=session,
             tg_id=tg_id,
             first_name=user_data['first_name'],
@@ -232,7 +224,6 @@ async def process_edit_phone_number(
     else:
         await message.answer("‼️ Ma'lumotlarni yangilashda xatolik yuz berdi.", reply_markup=mainMenu)
 
-# 5. Raqam o'rniga matn kiritilsa
 @router.message(PS.editing_phone_number)
 async def handle_wrong_phone_input(message: Message):
     await message.answer(
@@ -240,11 +231,12 @@ async def handle_wrong_phone_input(message: Message):
         reply_markup=requestContactKB
     )
 
+
 @router.message(F.text == "❌ Bekor qilish")
 async def cancel_editing(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is None:
         return
-    
+
     await state.clear()
     await message.answer("Tahrirlash bekor qilindi.", reply_markup=mainMenu)

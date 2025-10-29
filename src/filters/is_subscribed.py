@@ -7,7 +7,7 @@ from aiogram.types import Message, CallbackQuery, ChatMember
 from aiogram.enums import ChatMemberStatus
 
 from config import Config
-from src.keyboards.check import get_subscribe_keyboard # <-- Yangi import
+from src.keyboards.check import get_subscribe_keyboard 
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ class IsSubscribed(BaseFilter):
     ) -> bool:
         
         CHANNEL_ID = config.tg_bot.channel_id
+
         user_id = event.from_user.id
         
         try:
@@ -45,7 +46,7 @@ class IsSubscribed(BaseFilter):
             
             subscribe_keyboard = get_subscribe_keyboard()
             
-            message_text = "<b>Botdan foydalanish uchun</b>, iltimos, quyidagi kanalga obuna bo'ling"
+            message_text = "<b>Botdan foydalanish uchun</b>, iltimos, quyidagi kanalga obuna bo'ling va bo'limga kirish tugmasini qayta bosing "
             
             if isinstance(event, Message):
                 await event.answer(message_text, reply_markup=subscribe_keyboard)

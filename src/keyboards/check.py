@@ -2,7 +2,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardMarkup
 
 # Kanal URL'i (Bu statik bo'lib qoladi, agar config dan kelmasa)
-CHANNEL_URL = "https://t.me/Prezident_Maktabiga_Tayyarlov_1" 
+CHANNEL_URL = "https://t.me/piima_imtihoni"
 
 
 CHECK_SUB_CALLBACK = "check_subscription"

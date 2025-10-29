@@ -9,3 +9,4 @@ class CheckStates(StatesGroup):
     waiting_for_user_answers = State()
     waiting_for_finish_code = State()
     waiting_for_template_selection = State()
+    waiting_for_pagination = State()
