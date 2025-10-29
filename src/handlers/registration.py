@@ -162,7 +162,7 @@ async def start_profile_edit(message: Message, state: FSMContext, session_factor
     await state.set_state(PS.editing_first_name)
 
 
-@router.message(PS.editing_first_name, F.text)
+@router.message(PS.editing_first_name, F.text, ~F.text.in_({"❌ Bekor qilish"}))
 async def process_edit_first_name(message: Message, state: FSMContext):
     new_first_name = message.text.strip()
     
@@ -180,7 +180,7 @@ async def process_edit_first_name(message: Message, state: FSMContext):
     )
     await state.set_state(PS.editing_last_name)
 
-@router.message(PS.editing_last_name, F.text)
+@router.message(PS.editing_last_name, F.text, ~F.text.in_({"❌ Bekor qilish"}))
 async def process_edit_last_name(message: Message, state: FSMContext):
     new_last_name = message.text.strip()
     

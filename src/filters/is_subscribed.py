@@ -44,8 +44,7 @@ class IsSubscribed(BaseFilter):
         if not is_subscribed and self.is_required:
             
             subscribe_keyboard = get_subscribe_keyboard()
-            
-            message_text = "<b>Botdan foydalanish uchun</b>, iltimos, quyidagi kanalga obuna bo'ling"
+            message_text = "<b>Botdan foydalanish uchun</b>, iltimos, quyidagi kanalga obuna bo'ling \n\n qaysi bo'limga kirmoqchi bo'lsangiz tugmani qayta bosing"
             
             if isinstance(event, Message):
                 await event.answer(message_text, reply_markup=subscribe_keyboard)

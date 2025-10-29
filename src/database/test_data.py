@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, BigInteger, Boolean, select, update, func, or_, delete
+from aiocache import cached
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
@@ -40,7 +41,7 @@ async def add_new_test(
     await session.refresh(new_test)
     return new_test
 
-
+@cached(ttl=300, key_builder=lambda f, *args, **kwargs: args[1])
 async def get_test_by_id(session: AsyncSession, test_id: str) -> Optional[Test]:
     stmt = select(Test).where(Test.id == test_id)
     result = await session.execute(stmt)
