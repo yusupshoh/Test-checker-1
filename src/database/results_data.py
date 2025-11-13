@@ -2,7 +2,7 @@ from sqlalchemy import Column, BigInteger, String, Integer, select, func, DateTi
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Tuple
 from src.database.sign_data import User
-
+from sqlalchemy.future import select
 from src.database.base import Base
 
 class Result(Base):
@@ -73,3 +73,13 @@ async def delete_results_by_test_id(session: AsyncSession, test_id: str) -> int:
     result = await session.execute(stmt)
 
     return result.rowcount
+
+
+async def has_user_completed_test(session: AsyncSession, user_id: int, test_id: int) -> bool:
+
+    stmt = select(Result).where(
+        Result.user_id == user_id,
+        Result.test_id == test_id
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None

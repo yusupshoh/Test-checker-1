@@ -18,7 +18,7 @@ from src.filters.is_subscribed import IsSubscribed
 from src.states.test_creation import TestStates, CheckStates
 from src.keyboards.mainbtn import mainMenu
 from src.database.test_data import add_new_test, get_test_by_id, deactivate_test, Test
-from src.database.results_data import add_new_result, get_test_results_with_users, get_unique_user_ids_for_test
+from src.database.results_data import add_new_result, get_test_results_with_users, get_unique_user_ids_for_test, has_user_completed_test
 from src.database.sign_data import get_user
 from typing import List, Tuple, Any, Callable, Union, Optional
 import os
@@ -381,6 +381,22 @@ async def process_user_answers(message: Message, state: FSMContext, session_fact
     test_title = "Noma'lum test"
 
     async with session_factory() as session:
+        try:
+            already_completed = await has_user_completed_test(session, message.from_user.id, test_id)
+
+            if already_completed:
+                await message.answer(
+                    "❗️ Uzr, siz bu testni allaqachon ishlagansiz. Qayta ishlash mumkin emas."
+                )
+                await state.clear()
+                # `mainMenu` o'zgaruvchisi import qilingan deb faraz qilamiz
+                await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
+                return  # Natija saqlashga o'tmasdan funksiyadan chiqish
+
+        except Exception as e:
+            logger.error(f"Testni tugatganlikni tekshirishda xato: {e}")
+            await message.answer("Tizimda xato yuz berdi. Iltimos keyinroq urinib ko'ring.")
+            return
         test_info = await get_test_by_id(session, test_id)
         if test_info:
             creator_id = test_info.creator_id
