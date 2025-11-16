@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 def create_full_participant_report_pandas(
         test_title: str,
-        # Tuple tipi endi 7 ta qiymatni qamrab olishi kerak (oxirgi int o'rniga str bo'ladi, bu user_answers_key)
+        # Tuple tipi endi user_answers_key (str) ni ham o'z ichiga oladi
         results: List[Tuple[int, str, str, str, int, int, str]],
         creator_name: str
 ) -> str:
@@ -28,44 +28,80 @@ def create_full_participant_report_pandas(
         # 3. Ma'lumotlarni DataFramening qabul qiladigan formatiga o'tkazish
         data_list = []
 
-        # !!! FAKAT SHU YER O'ZGARTIRILDI !!!
-        # 7-chi qiymat (user_answers_key) uchun qo'shimcha '_' qo'shildi
-        for row_num, (user_id, first_name, last_name, phone_number, correct_count, total_questions, _) in enumerate(
+        for row_num, (user_id, first_name, last_name, phone_number, correct_count, total_questions,
+                      user_answers_key) in enumerate(
                 results):
             full_name = f"{first_name} {last_name or ''}".strip()
             # Foizni hisoblash
             percentage = round((correct_count / total_questions) * 100, 1) if total_questions else 0
 
             data_list.append({
-                'T/r': row_num + 1,
                 'F.I.Sh.': full_name,
                 'Telefon raqami': phone_number,
                 'To\'g\'ri javoblar': correct_count,
                 'Jami savollar': total_questions,
                 'Foiz (%)': percentage,
-                'Telegram ID': user_id
+                'Telegram ID': user_id,
+                # Javob kalitini qo'shish (Majburiy emas, lekin hisobot uchun foydali)
+                'Javob kaliti': user_answers_key
             })
 
         df = pd.DataFrame(data_list)
 
-        # ... qolgan kod (Excel faylini yaratish mantiqi)
+        # ----------------------------------------------------------------------
+        # !!! YANGI MANTIQ: FILTRATSIYA VA REYTINGNI TO'G'RILASH !!!
+        # ----------------------------------------------------------------------
 
+        # 1. 🗑️ FILTRATSIYA: Ma'lumoti to'liq bo'lmagan "ko'rinmas" qatorlarni o'chirish.
+        # Bu, ism-familiyasi bo'sh bo'lgan, ammo DBda qolib ketgan yozuvlarni o'chiradi.
+        # Bu "o'rni band bo'lgan" muammoni hal qiladi.
+        df = df[df['F.I.Sh.'].str.strip().astype(bool)]
+
+        # Agar filtratsiyadan keyin DataFrame bo'sh bo'lsa
+        if df.empty:
+            logger.warning(f"No valid participants found for test: {test_title}")
+            return None
+
+            # 2. 🔀 SARALASH: Ballar va foiz bo'yicha saralash
+        df = df.sort_values(by=['To\'g\'ri javoblar', 'Foiz (%)'], ascending=[False, False])
+
+        # 3. 🥇 O'RINNI HISOBLASH (T/r ustunini yangilash)
+        # 'dense' usuli bilan o'rin raqami uzilishlarsiz hisoblanadi (1, 2, 3, 3, 4, 5...)
+        # Bu 17 dan keyin 19 kelishi muammosini hal qiladi.
+        df['T/r'] = df['To\'g\'ri javoblar'].rank(method='dense', ascending=False).astype(int)
+
+        # Sertifikat generatori uchun maxsus 'rank' ustunini yaratish
+        # (Agar u 'T/r' emas, balki 'rank' ustunini kutsa)
+        df['rank'] = df['T/r']
+
+        # ----------------------------------------------------------------------
+
+        # Excel faylini yaratish mantiqi
         writer = pd.ExcelWriter(file_path, engine='openpyxl')
 
         info_df = pd.DataFrame({
             'Ma\'lumot': [f'Test: {test_title}', f'Muallif: {creator_name}',
-                          f'Yaratilgan vaqti: {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}']
+                          f'Yaratilgan vaqti: {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}',
+                          f'Ishtirokchilar soni: {len(df)}']  # Ishtirokchilar sonini yangilash
         })
 
         info_df.to_excel(writer, sheet_name='Ishtirokchilar', startrow=0, startcol=0, header=False, index=False)
-        df.to_excel(writer, sheet_name='Ishtirokchilar', startrow=4, startcol=0, header=True, index=False)
+
+        # Yangilangan 'T/r' ustunini Excelga birinchi ustun qilib qo'shish uchun:
+        # Ustunlar tartibini belgilash
+        columns_order = ['T/r', 'F.I.Sh.', 'Telefon raqami', 'To\'g\'ri javoblar', 'Jami savollar', 'Foiz (%)',
+                         'Telegram ID', 'Javob kaliti']
+        df_sorted = df[columns_order]
+
+        df_sorted.to_excel(writer, sheet_name='Ishtirokchilar', startrow=4, startcol=0, header=True, index=False)
 
         workbook = writer.book
         worksheet = writer.sheets['Ishtirokchilar']
 
         # Ustun kengligini sozlash
-        for i, col in enumerate(df.columns):
-            max_len = max(df[col].astype(str).str.len().max(), len(col)) + 2
+        for i, col in enumerate(df_sorted.columns):
+            max_len = max(df_sorted[col].astype(str).str.len().max(), len(col)) + 2
+            # Excel ustunlari A, B, C...
             worksheet.column_dimensions[chr(ord('A') + i)].width = max_len
 
         writer.close()
