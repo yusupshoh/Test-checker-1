@@ -23,7 +23,7 @@ from src.database.sign_data import get_user
 from typing import List, Tuple, Any, Callable, Union, Optional
 import os
 from src.utils.excel_generator import create_full_participant_report_pandas
-from src.utils.sertifikat_generator import create_certificate
+from src.utils.sertifikat_generator import create_certificate, CertificateGenerator1, CertificateGenerator2, CertificateGenerator3, CertificateGenerator4
 from PIL import Image
 import asyncio
 import functools
@@ -38,6 +38,13 @@ if not hasattr(asyncio, 'to_thread'):
         return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
     asyncio.to_thread = to_thread
 
+GENERATORS_POOL = {
+    1: CertificateGenerator1(),
+    2: CertificateGenerator2(),
+    3: CertificateGenerator3(),
+    4: CertificateGenerator4()
+}
+
 CERTIFICATE_TEMPLATES = {
     1: {"file": "sertifikatlar/sertifikat_shablon1.png", "desc": "Shablon 1"},
     2: {"file": "sertifikatlar/sertifikat_shablon2.png", "desc": "Shablon 2"},
@@ -49,6 +56,7 @@ MAX_CERT_INDEX = len(CERT_IDS) - 1
 
 TELEGRAM_MESSAGE_BATCH_SIZE = 20
 TELEGRAM_MESSAGE_DELAY = 1.1
+
 
 
 # test.py ichida, funksiyalar yuqori qismida qo'shish:
@@ -111,24 +119,44 @@ async def send_message_batch(bot: Bot, user_id_list: List[int], message_text: st
 
 router = Router()
 
-def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> Union[str, None]:
+
+def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> Optional[str]:
     if not image_paths:
         return None
+
     images = []
     try:
         for path in image_paths:
-            images.append(Image.open(path))
-        first_image = images[0]
-        other_images = images[1:]
-        if other_images:
-            first_image.save(output_pdf_path, save_all=True, append_images=other_images)
-        else:
-            first_image.save(output_pdf_path)
+            if not os.path.exists(path):
+                continue
+
+            img = Image.open(path)
+
+            # RGB konvertatsiyasi - PDF standarti uchun shart
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # Sifatni saqlash, lekin hajmni boshqarish
+            # Agar rasm o'ta katta bo'lsa (masalan, 3000px+), uni biroz kichraytirish mumkin
+            # Lekin shunchaki save() parametrlarini to'g'irlash kifoya
+            images.append(img)
+
+        if images:
+            # OPTIMALLASHTIRILGAN SAQLASH
+            images[0].save(
+                output_pdf_path,
+                save_all=True,
+                append_images=images[1:],
+                optimize=True,  # Fayl tuzilishini optimallashtiradi
+                quality=85  # 100 dan 75 ga tushirish vizual deyarli sezilmaydi, lekin hajm 3-4 baravar kamayadi
+            )
         return output_pdf_path
+
     except Exception as e:
-        logger.error(f"PDF birlashtirishda xato yuz berdi: {e}")
+        logger.error(f"PDF yaratishda xato: {e}")
         return None
     finally:
+        # Xotirani tozalash (RAMni bo'shatish)
         for img in images:
             try:
                 img.close()
@@ -684,6 +712,7 @@ async def handle_cert_navigation(callback: CallbackQuery, state: FSMContext, bot
         await callback.answer()
 
 
+
 @router.callback_query(F.data.startswith("cert_select"), CheckStates.waiting_for_pagination)
 async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot: Bot): 
     selected_cert_id_raw = callback.data.split(":")[1]
@@ -762,6 +791,14 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
             output_pdf_path
         )
 
+        if pdf_path:
+            await bot.send_document(
+                chat_id=callback.from_user.id,
+                document=FSInputFile(pdf_path),
+                caption="📄 Sertifikatlar tayyor!",
+                request_timeout=300  # 5 daqiqa vaqt beramiz
+            )
+
         # 4. Yuborish va Tozalash
         if pdf_path and os.path.exists(pdf_path):
             try:
@@ -769,14 +806,13 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
                     chat_id=callback.from_user.id,
                     document=FSInputFile(pdf_path),
                     caption=f"📄 Barcha {len(temp_cert_paths)} ta sertifikatlar <b>{test_title}</b> testi uchun bitta PDF faylda.",
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    request_timeout=300  # <--- SHU QISM: 5 daqiqa (300 soniya) vaqt beramiz
                 )
                 logger.info(f"PDF certificate archive sent to creator {callback.from_user.id}")
             except Exception as e:
                 logger.error(f"PDF ni yuborishda xato: {e}")
-                await callback.message.answer("PDF arxivni yuborishda xato yuz berdi.")
-        else:
-            await callback.message.answer("PDF arxivni yaratishda xato yuz berdi.")
+                await callback.message.answer("⚠️ PDF arxivni yuborishda xato yuz berdi (Timeout bo'lishi mumkin).")
 
         # Fayllar va papkani o'chirish (try...finally emas, balki qulaylik uchun oxirida)
         if os.path.exists(temp_dir):

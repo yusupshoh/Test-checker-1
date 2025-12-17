@@ -1,10 +1,26 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 import uuid
-from typing import List, Tuple
+
+from src.handlers.test import GENERATORS_POOL
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseCertificateGenerator:
+    _fonts_cache = {}
+
+    def _get_font(self, font_path, size):
+        cache_key = f"{font_path}_{size}"
+        if cache_key not in self._fonts_cache:
+            try:
+                self._fonts_cache[cache_key] = ImageFont.truetype(font_path, size)
+                # logger.info(f"Shrift yuklandi: {font_path}") # Test uchun
+            except IOError:
+                self._fonts_cache[cache_key] = ImageFont.load_default()
+        return self._fonts_cache[cache_key]
+
     def _wrap_and_center_text(self,
                               draw: ImageDraw.ImageDraw,
                               text: str,
@@ -45,70 +61,44 @@ class BaseCertificateGenerator:
             draw.text((center_x, current_y), line, fill=fill_color, font=font)
             current_y += line_spacing
 
-    def generate_certificate(self,
-                             full_name: str,
-                             subject: str,
-                             result_percent: float,
-                             rank: int,
-                             teacher_name: str,
-                             output_name: str):
+    def generate_certificate(self, full_name: str, subject: str, result_percent: float,
+                             rank: int, teacher_name: str, output_name: str):
         try:
             img = Image.open(self.TEMPLATE_FILE)
             draw = ImageDraw.Draw(img)
             img_width, _ = img.size
 
-            # -----------------------------------------------------------
-            # !!! KICHIK O'ZGARTIRISH KIRITILGAN QISM !!!
-            # Excel generatoridan kelgan o'rin raqamini to'g'ri matnga o'tkazish
             rank_text = f"{rank}"
-
             congrats_text_final = (
                 f"Telegram botimiz orqali {subject} fanidan o`tkazilgan "
                 f"testimizdan {result_percent}% natija ko'rsatgani uchun {teacher_name} tomonidan "
                 f"{rank_text}-o'rin bilan taqdirlandi"
             )
-            # -----------------------------------------------------------
 
-            try:
-                student_font = ImageFont.truetype(self.STUDENT_FONT_FILE, self.STUDENT_FONT_SIZE)
-            except IOError:
-                student_font = ImageFont.load_default()
+            # OLD: student_font = ImageFont.truetype(self.STUDENT_FONT_FILE, self.STUDENT_FONT_SIZE)
+            # NEW (Keshdan foydalanish):
+            student_font = self._get_font(self.STUDENT_FONT_FILE, self.STUDENT_FONT_SIZE)
 
             text_bbox = draw.textbbox((0, 0), full_name, font=student_font)
             text_width = text_bbox[2] - text_bbox[0]
-            center_x = (img_width - text_width) / 2
-            student_position = (center_x, self.STUDENT_POSITION_Y)
+            student_position = ((img_width - text_width) / 2, self.STUDENT_POSITION_Y)
             draw.text(student_position, full_name, fill=self.STUDENT_TEXT_COLOR, font=student_font)
 
-            try:
-                teacher_font = ImageFont.truetype(self.TEACHER_FONT_FILE, self.TEACHER_FONT_SIZE)
-            except IOError:
-                teacher_font = ImageFont.load_default()
-
+            # O'qituvchi va tabrik matni uchun ham keshdan foydalanamiz:
+            teacher_font = self._get_font(self.TEACHER_FONT_FILE, self.TEACHER_FONT_SIZE)
             draw.text(self.TEACHER_POSITION_XY, teacher_name, fill=self.TEACHER_TEXT_COLOR, font=teacher_font)
 
-            try:
-                congrats_font = ImageFont.truetype(self.CONGRATS_FONT_FILE, self.CONGRATS_FONT_SIZE)
-            except IOError:
-                congrats_font = ImageFont.load_default()
-
+            congrats_font = self._get_font(self.CONGRATS_FONT_FILE, self.CONGRATS_FONT_SIZE)
             self._wrap_and_center_text(
-                draw,
-                congrats_text_final,
-                congrats_font,
-                img_width,
-                self.CONGRATS_MAX_WIDTH,
-                self.CONGRATS_POSITION_Y,
-                self.LINE_SPACING,
-                self.CONGRATS_TEXT_COLOR
+                draw, congrats_text_final, congrats_font, img_width,
+                self.CONGRATS_MAX_WIDTH, self.CONGRATS_POSITION_Y,
+                self.LINE_SPACING, self.CONGRATS_TEXT_COLOR
             )
 
             img.save(output_name)
 
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Shablon yoki shrift fayli topilmadi: {self.TEMPLATE_FILE} yoki shriftlar.")
         except Exception as e:
-            raise Exception(f"Sertifikat yaratishda kutilmagan xato: {e}")
+            raise Exception(f"Sertifikat yaratishda xato: {e}")
 
 
 class CertificateGenerator1(BaseCertificateGenerator):
@@ -195,20 +185,19 @@ def create_certificate(generator_id: int,
                        teacher_name: str) -> str:
     OUTPUT_DIR = "temp_certs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    output_filename = os.path.join(OUTPUT_DIR, f"cert_{uuid.uuid4().hex[:8]}_{full_name.replace(' ', '_').lower()}.png")
+
+    # Ismdagi bo'shliqlarni va noaniq belgilarni tozalash
+    safe_name = "".join([c for c in full_name if c.isalnum() or c in (' ', '_')]).rstrip()
+    output_filename = os.path.join(OUTPUT_DIR, f"cert_{rank}_{uuid.uuid4().hex[:5]}.png")
 
     try:
-        if generator_id == 1:
-            generator = CertificateGenerator1()
-        elif generator_id == 2:
-            generator = CertificateGenerator2()
-        elif generator_id == 3:
-            generator = CertificateGenerator3()
-        elif generator_id == 4:
-            generator = CertificateGenerator4()
-        else:
+        # Yangi klass yaratish o'rniga, tayyor pool dan olamiz
+        generator = GENERATORS_POOL.get(generator_id)
+
+        if not generator:
             return "❌ Noto'g'ri generator ID."
 
+        # Tayyor obyekt orqali metodni chaqiramiz
         generator.generate_certificate(
             full_name=full_name,
             subject=subject,
@@ -220,7 +209,6 @@ def create_certificate(generator_id: int,
 
         return output_filename
 
-    except FileNotFoundError as e:
-        return f"❌ Fayl xatosi: {e}"
     except Exception as e:
-        return f"❌ Sertifikat yaratishda kutilmagan xato: {e}"
+        logger.error(f"Sertifikat generatsiyasida xato: {e}")
+        return f"❌ Xato: {e}"
