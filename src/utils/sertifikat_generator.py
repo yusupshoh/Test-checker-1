@@ -2,7 +2,6 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import uuid
 
-from src.handlers.test import GENERATORS_POOL
 import logging
 
 logger = logging.getLogger(__name__)
@@ -176,6 +175,12 @@ class CertificateGenerator4(BaseCertificateGenerator):
         self.CONGRATS_MAX_WIDTH = 850
         self.LINE_SPACING = 40
 
+GENERATORS_POOL = {
+    1: CertificateGenerator1(),
+    2: CertificateGenerator2(),
+    3: CertificateGenerator3(),
+    4: CertificateGenerator4()
+}
 
 def create_certificate(generator_id: int,
                        full_name: str,

@@ -23,7 +23,7 @@ from src.database.sign_data import get_user
 from typing import List, Tuple, Any, Callable, Union, Optional
 import os
 from src.utils.excel_generator import create_full_participant_report_pandas
-from src.utils.sertifikat_generator import create_certificate, CertificateGenerator1, CertificateGenerator2, CertificateGenerator3, CertificateGenerator4
+from src.utils.sertifikat_generator import create_certificate
 from PIL import Image
 import asyncio
 import functools
@@ -38,12 +38,6 @@ if not hasattr(asyncio, 'to_thread'):
         return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
     asyncio.to_thread = to_thread
 
-GENERATORS_POOL = {
-    1: CertificateGenerator1(),
-    2: CertificateGenerator2(),
-    3: CertificateGenerator3(),
-    4: CertificateGenerator4()
-}
 
 CERTIFICATE_TEMPLATES = {
     1: {"file": "sertifikatlar/sertifikat_shablon1.png", "desc": "Shablon 1"},
@@ -790,14 +784,6 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
             temp_cert_paths,
             output_pdf_path
         )
-
-        if pdf_path:
-            await bot.send_document(
-                chat_id=callback.from_user.id,
-                document=FSInputFile(pdf_path),
-                caption="📄 Sertifikatlar tayyor!",
-                request_timeout=300  # 5 daqiqa vaqt beramiz
-            )
 
         # 4. Yuborish va Tozalash
         if pdf_path and os.path.exists(pdf_path):
