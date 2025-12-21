@@ -139,10 +139,11 @@ def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> 
             # OPTIMALLASHTIRILGAN SAQLASH
             images[0].save(
                 output_pdf_path,
+                "PDF",
                 save_all=True,
                 append_images=images[1:],
                 optimize=True,  # Fayl tuzilishini optimallashtiradi
-                quality=85  # 100 dan 75 ga tushirish vizual deyarli sezilmaydi, lekin hajm 3-4 baravar kamayadi
+                quality=85  # 100 dan 85 ga tushirish vizual deyarli sezilmaydi, lekin hajm 3-4 baravar kamayadi
             )
         return output_pdf_path
 

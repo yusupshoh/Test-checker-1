@@ -94,7 +94,9 @@ class BaseCertificateGenerator:
                 self.LINE_SPACING, self.CONGRATS_TEXT_COLOR
             )
 
-            img.save(output_name)
+            img.save(output_name,
+                     optimize=True,
+                     quality=80,)
 
         except Exception as e:
             raise Exception(f"Sertifikat yaratishda xato: {e}")
@@ -190,8 +192,6 @@ def create_certificate(generator_id: int,
                        teacher_name: str) -> str:
     OUTPUT_DIR = "temp_certs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # Ismdagi bo'shliqlarni va noaniq belgilarni tozalash
     safe_name = "".join([c for c in full_name if c.isalnum() or c in (' ', '_')]).rstrip()
     output_filename = os.path.join(OUTPUT_DIR, f"cert_{rank}_{uuid.uuid4().hex[:5]}.png")
 
