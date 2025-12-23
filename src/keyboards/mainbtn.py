@@ -1,4 +1,5 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 mainMenu = ReplyKeyboardMarkup(
 	keyboard=[
@@ -36,3 +37,4 @@ cancelKB = ReplyKeyboardMarkup(
 		],
 	resize_keyboard=True
 	)
+

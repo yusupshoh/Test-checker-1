@@ -6,14 +6,11 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from aiogram.client.default import DefaultBotProperties
 from config import Config, load_config
 from src.database.base import Base
-# ensure_primary_admin funksiyasi sign_data.py dan import qilinishi shart!
 from src.database.sign_data import User, ensure_primary_admin
 from src.handlers import registration, test, admin
-from aiogram.types import BotCommand
 from src.handlers.registration import set_default_commands
 
 logger = logging.getLogger(__name__)
-
 
 async def main():
     logging.basicConfig(
@@ -43,20 +40,16 @@ async def main():
         engine, expire_on_commit=False
     )
 
-    # ------------------------------------------------------------
-    # 2. SUPER ADMINNI DBGA QO'SHISH/YANGILASH MANTIG'I
-    # ------------------------------------------------------------
     logger.info(f"Super Admin {SUPER_ADMIN_ID}ni ta'minlash boshlandi...")
     async with session_factory() as session:
-        # ensure_primary_admin funksiyasi orqali admin yaratiladi yoki huquqi tiklanadi
         await ensure_primary_admin(
             session,
             tg_id=SUPER_ADMIN_ID,
             first_name=ADMIN_FIRST_NAME,
             last_name=ADMIN_LAST_NAME
         )
+
     logger.info(f"Super Admin ({ADMIN_FIRST_NAME} {ADMIN_LAST_NAME}) ta'minlandi.")
-    # ------------------------------------------------------------
 
     bot: Bot = Bot(token=config.tg_bot.token, default=DefaultBotProperties(parse_mode="HTML"))
     dp: Dispatcher = Dispatcher(storage=MemoryStorage())

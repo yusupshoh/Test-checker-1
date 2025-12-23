@@ -23,10 +23,6 @@ router = Router()
 
 
 def generate_monthly_growth_chart(data: dict) -> io.BytesIO:
-    """Oylik o'sish ma'lumotlari asosida grafik (diagramma) yaratadi.
-       data = {'months': ['Jan', 'Feb', ...], 'counts': [17, 19, ...]}
-    """
-
     months_names = data['months']
     user_counts = data['counts']
 

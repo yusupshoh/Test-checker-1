@@ -30,6 +30,8 @@ import functools
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+
+router = Router()
 logger = logging.getLogger(__name__)
 
 if not hasattr(asyncio, 'to_thread'):
@@ -52,8 +54,33 @@ TELEGRAM_MESSAGE_BATCH_SIZE = 20
 TELEGRAM_MESSAGE_DELAY = 1.1
 
 
+@router.callback_query(F.data.startswith("live_status:"))
+async def handle_live_status(callback: CallbackQuery, session_factory: async_sessionmaker[AsyncSession]):
+    test_id = int(callback.data.split(":")[1])
 
-# test.py ichida, funksiyalar yuqori qismida qo'shish:
+    async with session_factory() as session:
+        # Bazadan joriy natijalarni olamiz
+        results = await get_test_results_with_users(session, test_id)
+
+    if not results:
+        await callback.answer("Hozircha hech kim test ishlamadi ⌛️", show_alert=True)
+        return
+
+    # Natijalarni saralash (nechanchi o'rindaligini aniqlash uchun)
+    sorted_results = sorted(results, key=lambda x: x[4], reverse=True)
+
+    report = f"📊 <b>Test ID: {test_id} bo'yicha joriy holat:</b>\n\n"
+    for index, res in enumerate(sorted_results[:10]):  # Faqat top 10 talikni ko'rsatish
+        _, first_name, last_name, _, correct, total, _ = res
+        full_name = f"{first_name} {last_name or ''}".strip()
+        report += f"{index + 1}. {full_name} — {correct}/{total} ✅\n"
+
+    if len(sorted_results) > 10:
+        report += f"\n... va yana {len(sorted_results) - 10} kishi."
+
+    # Xabarni yangilash yoki yangi xabar yuborish
+    await callback.message.answer(report, parse_mode='HTML')
+    await callback.answer()
 
 def format_user_report(correct_answers_key: str, user_answers_key: str) -> str:
     def create_answer_dict_from_string(answer_key):
@@ -111,7 +138,6 @@ async def send_message_batch(bot: Bot, user_id_list: List[int], message_text: st
             logger.info(f"Batch completed. Pausing for {TELEGRAM_MESSAGE_DELAY}s...")
     logger.info(f"Message sent to {len(user_id_list)} users in batches.")
 
-router = Router()
 
 
 def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> Optional[str]:
@@ -130,9 +156,6 @@ def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> 
             if img.mode != 'RGB':
                 img = img.convert('RGB')
 
-            # Sifatni saqlash, lekin hajmni boshqarish
-            # Agar rasm o'ta katta bo'lsa (masalan, 3000px+), uni biroz kichraytirish mumkin
-            # Lekin shunchaki save() parametrlarini to'g'irlash kifoya
             images.append(img)
 
         if images:
@@ -280,12 +303,23 @@ async def save_new_test(
                 answer=test_answer,
             )
 
+            test_status = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(text="📊 Holati ", callback_data=f"live_status:{new_test.id}")
+                    ]
+                ]
+            )
+
             await message.answer(
                 f"Fan: <b>{test_title}</b>\n"
-                f"Id: <i><code>{new_test.id}</code></i>\n\n"
-                f"Foydalanuvchilar bu ID orqali testni ishlay olishadi.",
-                parse_mode='HTML'
+                f"Id: <i><code>{new_test.id}</code></i>\n"
+                f"Foydalanuvchilar bu ID orqali testni ishlay olishadi.\n\n"
+                f"👇 Pastagi tugma orqali testni yakunlanishigacha necha kishi ishlagani va kim nechinchi o'rinda turganini bilsangiz bo'ladi",
+                parse_mode='HTML',
+                reply_markup=test_status
             )
+
             await state.clear()
             await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu) 
             
