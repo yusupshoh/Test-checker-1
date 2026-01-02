@@ -46,6 +46,12 @@ CERTIFICATE_TEMPLATES = {
     2: {"file": "sertifikatlar/sertifikat_shablon2.png", "desc": "Shablon 2"},
     3: {"file": "sertifikatlar/sertifikat_shablon3.png", "desc": "Shablon 3"},
     4: {"file": "sertifikatlar/sertifikat_shablon4.png", "desc": "Shablon 4"},
+    5: {"file": "sertifikatlar/sertifikat_shablon5.png", "desc": "Shablon 5"},
+    6: {"file": "sertifikatlar/sertifikat_shablon6.png", "desc": "Shablon 6"},
+    7: {"file": "sertifikatlar/sertifikat_shablon7.png", "desc": "Shablon 7"},
+    8: {"file": "sertifikatlar/sertifikat_shablon8.png", "desc": "Shablon 8"},
+    9: {"file": "sertifikatlar/sertifikat_shablon9.png", "desc": "Shablon 9"},
+    10: {"file": "sertifikatlar/sertifikat_shablon10.png", "desc": "Shablon 10"},
 }
 CERT_IDS = sorted(CERTIFICATE_TEMPLATES.keys()) 
 MAX_CERT_INDEX = len(CERT_IDS) - 1
