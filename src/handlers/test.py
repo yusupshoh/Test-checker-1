@@ -1,11 +1,11 @@
 import logging
 from aiogram import Router, F, Bot
 from aiogram.types import (
-    Message, 
-    ReplyKeyboardRemove, 
+    Message,
+    ReplyKeyboardRemove,
     FSInputFile,
-    InlineKeyboardMarkup, 
-    InlineKeyboardButton, 
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
     CallbackQuery
 )
 from aiogram.filters import Command
@@ -18,7 +18,8 @@ from src.filters.is_subscribed import IsSubscribed
 from src.states.test_creation import TestStates, CheckStates
 from src.keyboards.mainbtn import mainMenu
 from src.database.test_data import add_new_test, get_test_by_id, deactivate_test, Test
-from src.database.results_data import add_new_result, get_test_results_with_users, get_unique_user_ids_for_test, has_user_completed_test
+from src.database.results_data import add_new_result, get_test_results_with_users, get_unique_user_ids_for_test, \
+    has_user_completed_test
 from src.database.sign_data import get_user
 from typing import List, Tuple, Any, Callable, Union, Optional
 import os
@@ -30,16 +31,16 @@ import functools
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-
 router = Router()
 logger = logging.getLogger(__name__)
 
 if not hasattr(asyncio, 'to_thread'):
-    async def to_thread(func: Callable[..., Any], *args:Any, **kwargs:Any,) -> Any:
+    async def to_thread(func: Callable[..., Any], *args: Any, **kwargs: Any, ) -> Any:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
-    asyncio.to_thread = to_thread
 
+
+    asyncio.to_thread = to_thread
 
 CERTIFICATE_TEMPLATES = {
     1: {"file": "sertifikatlar/sertifikat_shablon1.png", "desc": "Shablon 1"},
@@ -53,7 +54,7 @@ CERTIFICATE_TEMPLATES = {
     9: {"file": "sertifikatlar/sertifikat_shablon9.png", "desc": "Shablon 9"},
     10: {"file": "sertifikatlar/sertifikat_shablon10.png", "desc": "Shablon 10"},
 }
-CERT_IDS = sorted(CERTIFICATE_TEMPLATES.keys()) 
+CERT_IDS = sorted(CERTIFICATE_TEMPLATES.keys())
 MAX_CERT_INDEX = len(CERT_IDS) - 1
 
 TELEGRAM_MESSAGE_BATCH_SIZE = 20
@@ -87,6 +88,7 @@ async def handle_live_status(callback: CallbackQuery, session_factory: async_ses
     # Xabarni yangilash yoki yangi xabar yuborish
     await callback.message.answer(report, parse_mode='HTML')
     await callback.answer()
+
 
 def format_user_report(correct_answers_key: str, user_answers_key: str) -> str:
     def create_answer_dict_from_string(answer_key):
@@ -127,6 +129,7 @@ def format_user_report(correct_answers_key: str, user_answers_key: str) -> str:
 
     return "\n".join(report_lines)
 
+
 async def send_message_batch(bot: Bot, user_id_list: List[int], message_text: str, parse_mode: str = 'HTML'):
     for i in range(0, len(user_id_list), TELEGRAM_MESSAGE_BATCH_SIZE):
         batch = user_id_list[i:i + TELEGRAM_MESSAGE_BATCH_SIZE]
@@ -145,8 +148,26 @@ async def send_message_batch(bot: Bot, user_id_list: List[int], message_text: st
     logger.info(f"Message sent to {len(user_id_list)} users in batches.")
 
 
+TELEGRAM_MAX_FILE_SIZE_BYTES = 49 * 1024 * 1024  # 49 MB (Telegram limiti 50MB)
+PDF_MAX_WIDTH = 1240  # Kenglik piksel (A4 @ 150 dpi)
+PDF_MAX_HEIGHT = 1754  # Balandlik piksel (A4 @ 150 dpi)
+PDF_JPEG_QUALITY = 82  # JPEG siqish darajasi (vizual farq sezilmaydi)
+
+
+def _resize_for_pdf(img: Image.Image) -> Image.Image:
+    """Rasmni A4 o'lchamiga moslashtiradi va RAM tejaydi."""
+    img.thumbnail((PDF_MAX_WIDTH, PDF_MAX_HEIGHT), Image.LANCZOS)
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    return img
+
 
 def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> Optional[str]:
+    """
+    PNG sertifikatlarni bitta PDF fayliga birlashtiradi.
+    Har bir rasm A4 o'lchamiga kichraytiriladi va JPEG sifatida
+    siqiladi — bu PDF hajmini 10-15 barobar kamaytiradi.
+    """
     if not image_paths:
         return None
 
@@ -154,47 +175,60 @@ def combine_images_to_pdf_sync(image_paths: List[str], output_pdf_path: str) -> 
     try:
         for path in image_paths:
             if not os.path.exists(path):
+                logger.warning(f"Sertifikat fayli topilmadi, o'tkazib yuborildi: {path}")
                 continue
 
             img = Image.open(path)
-
-            # RGB konvertatsiyasi - PDF standarti uchun shart
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-
+            img = _resize_for_pdf(img)
             images.append(img)
 
-        if images:
-            # OPTIMALLASHTIRILGAN SAQLASH
-            images[0].save(
-                output_pdf_path,
-                "PDF",
-                save_all=True,
-                append_images=images[1:],
-                optimize=True,  # Fayl tuzilishini optimallashtiradi
-                quality=85  # 100 dan 85 ga tushirish vizual deyarli sezilmaydi, lekin hajm 3-4 baravar kamayadi
+        if not images:
+            logger.error("PDF uchun hech qanday rasm yuklanmadi.")
+            return None
+
+        # PDF'ni JPEG siqish bilan saqlash (PNG'dan 10-15x kichikroq)
+        images[0].save(
+            output_pdf_path,
+            "PDF",
+            save_all=True,
+            append_images=images[1:],
+            quality=PDF_JPEG_QUALITY,
+            resolution=150.0,
+        )
+
+        # Telegram limitini tekshirish
+        pdf_size = os.path.getsize(output_pdf_path)
+        logger.info(f"PDF yaratildi: {len(images)} ta sertifikat, hajmi {pdf_size // 1024 // 1024} MB")
+
+        if pdf_size > TELEGRAM_MAX_FILE_SIZE_BYTES:
+            logger.error(
+                f"PDF hajmi ({pdf_size // 1024 // 1024} MB) Telegram limitidan (49 MB) katta! "
+                f"Sertifikat soni: {len(images)}"
             )
+            return f"TOO_LARGE:{pdf_size}"  # Maxsus belgi — yuqorida tekshiriladi
+
         return output_pdf_path
 
     except Exception as e:
-        logger.error(f"PDF yaratishda xato: {e}")
+        logger.error(f"PDF yaratishda xato: {e}", exc_info=True)
         return None
     finally:
-        # Xotirani tozalash (RAMni bo'shatish)
         for img in images:
             try:
                 img.close()
-            except:
+            except Exception:
                 pass
 
-def get_cert_pagination_kb(current_index: int): 
-    current_cert_id = CERT_IDS[current_index] 
+
+def get_cert_pagination_kb(current_index: int):
+    current_cert_id = CERT_IDS[current_index]
     total_certs = len(CERT_IDS)
-    
+
     keyboard = [
         [
             InlineKeyboardButton(text="◀️ Oldingi", callback_data=f"cert_nav:prev:{current_index}"),
-            InlineKeyboardButton(text=f"Tanlash ({current_cert_id}/{total_certs})", callback_data=f"cert_select:{current_cert_id}"),
+            InlineKeyboardButton(text=f"Tanlash ({current_cert_id}/{total_certs})",
+                                 callback_data=f"cert_select:{current_cert_id}"),
             InlineKeyboardButton(text="Keyingi ▶️", callback_data=f"cert_nav:next:{current_index}"),
         ],
         [
@@ -202,6 +236,7 @@ def get_cert_pagination_kb(current_index: int):
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 async def send_cert_template(bot: Bot, chat_id: int, current_index: int, msg_id: int = None):
     cert_id = CERT_IDS[current_index]
@@ -211,11 +246,10 @@ async def send_cert_template(bot: Bot, chat_id: int, current_index: int, msg_id:
     caption += "Iltimos, test ishtirokchilari uchun sertifikat shablonini tanlang:"
     keyboard = get_cert_pagination_kb(current_index)
     photo = FSInputFile(photo_path)
-    
-    if msg_id:
 
+    if msg_id:
         await bot.delete_message(chat_id, msg_id)
-        
+
     sent_message = await bot.send_photo(
         chat_id=chat_id,
         photo=photo,
@@ -223,11 +257,12 @@ async def send_cert_template(bot: Bot, chat_id: int, current_index: int, msg_id:
         parse_mode='Markdown',
         reply_markup=keyboard
     )
-    
+
     return sent_message.message_id
 
+
 def create_answer_dict_from_string(answer_key_raw: str) -> dict:
-    pattern = r'(\d+[a-z])' 
+    pattern = r'(\d+[a-z])'
     matches = re.findall(pattern, answer_key_raw.lower())
     result_dict = {}
     for pair in matches:
@@ -236,6 +271,8 @@ def create_answer_dict_from_string(answer_key_raw: str) -> dict:
 
 
 TEST_ID_LENGTH = 5
+
+
 async def generate_test_id(session: AsyncSession) -> int:
     while True:
         new_id = random.randint(10 ** (TEST_ID_LENGTH - 1), 10 ** TEST_ID_LENGTH - 1)
@@ -245,16 +282,18 @@ async def generate_test_id(session: AsyncSession) -> int:
         if test is None:
             return new_id
 
+
 @router.message(F.text == "/new_test")
 @router.message(F.text == "➕ Test yaratish", IsSubscribed())
-async def start_create_test_handler(message: Message, state: FSMContext, session_factory: async_sessionmaker[AsyncSession]):
+async def start_create_test_handler(message: Message, state: FSMContext,
+                                    session_factory: async_sessionmaker[AsyncSession]):
     async with session_factory() as session:
         new_test_id = await generate_test_id(session)
     await state.clear()
     await state.update_data(test_id=new_test_id)
     await message.answer("📃 Siz Test Yaratish bo'limidasiz.\n\n")
     await message.answer("✏️ fan nomini kiriting: ",
-         reply_markup=ReplyKeyboardRemove())
+                         reply_markup=ReplyKeyboardRemove())
     await state.set_state(TestStates.waiting_for_name)
     logger.info(f"User {message.from_user.id} started test creation with ID: {new_test_id}")
 
@@ -264,19 +303,20 @@ async def process_test_name(message: Message, state: FSMContext):
     test_title = message.text.strip()
     if len(test_title) < 3 or len(test_title) > 255:
         await message.answer("Uzunroq matn kiriting ‼️")
-        return    
+        return
     await state.update_data(test_title=test_title)
     await message.answer("Endi savol-javob kalitini quyidagi usulda kiriting 📝:\n\n"
-        "NAMUNA: <i>1a2b3c4d...</i> (Bo'sh joylarsiz!)"
-    )
+                         "NAMUNA: <i>1a2b3c4d...</i> (Bo'sh joylarsiz!)"
+                         )
 
     await state.set_state(TestStates.waiting_for_answer_key)
 
+
 @router.message(TestStates.waiting_for_answer_key, F.text, IsSubscribed())
 async def save_new_test(
-    message: Message, 
-    state: FSMContext, 
-    session_factory: async_sessionmaker[AsyncSession]
+        message: Message,
+        state: FSMContext,
+        session_factory: async_sessionmaker[AsyncSession]
 ):
     answer_key = message.text.strip().lower()
     VALID_KEY_PATTERN = r'^(\d+[a-z])+$'
@@ -289,21 +329,21 @@ async def save_new_test(
         return
     user_answer_key = message.text.strip().lower()
     if len(answer_key) < 4:
-        await message.answer("Qayta urining. Kalit faqat harf va raqamlardan iborat va kamida 4 belgi bo'lishi kerak. ‼️")
+        await message.answer(
+            "Qayta urining. Kalit faqat harf va raqamlardan iborat va kamida 4 belgi bo'lishi kerak. ‼️")
         return
-        
+
     user_data = await state.get_data()
     new_test_id = user_data.get("test_id")
     test_title = user_data.get('test_title')
     creator_id = message.from_user.id
     test_answer = user_answer_key
 
-
     async with session_factory() as session:
         try:
             new_test = await add_new_test(
                 session=session,
-                test_id=new_test_id, 
+                test_id=new_test_id,
                 title=test_title,
                 creator_id=creator_id,
                 answer=test_answer,
@@ -327,8 +367,8 @@ async def save_new_test(
             )
 
             await state.clear()
-            await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu) 
-            
+            await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
+
         except Exception as e:
             logger.error("Error creating test or saving to DB: %s", e)
             await message.answer(
@@ -342,13 +382,13 @@ async def save_new_test(
 @router.message(F.text == "✅ Javoblarni tekshirish", IsSubscribed())
 async def start_check_answers_handler(message: Message, state: FSMContext):
     await state.clear()
-    
+
     await message.answer(
         "Siz Javoblarni tekshirish bo'limidasiz ☑️✅\n\n"
         "Tekshirish uchun test ID raqamini kiriting (masalan, 12345):",
         reply_markup=ReplyKeyboardRemove()
     )
-    
+
     await state.set_state(CheckStates.waiting_for_code)
     logger.info(f"User {message.from_user.id} started answer checking.")
 
@@ -391,7 +431,8 @@ async def process_test_code_for_check(
 
 
 @router.message(CheckStates.waiting_for_user_answers, F.text, IsSubscribed())
-async def process_user_answers(message: Message, state: FSMContext, session_factory: async_sessionmaker[AsyncSession], bot: Bot):
+async def process_user_answers(message: Message, state: FSMContext, session_factory: async_sessionmaker[AsyncSession],
+                               bot: Bot):
     user_answers_raw = message.text.strip().lower()
     VALID_KEY_PATTERN = r'^(\d+[a-z])+$'
 
@@ -410,22 +451,21 @@ async def process_user_answers(message: Message, state: FSMContext, session_fact
     data = await state.get_data()
     test_id = data.get('current_test_id')
     correct_answers_key_raw = data.get('correct_answers')
-    pattern = r'(\d+[a-z])' 
+    pattern = r'(\d+[a-z])'
     correct_matches = re.findall(pattern, correct_answers_key_raw)
     user_matches = re.findall(pattern, user_answers_raw)
-    
-    
+
     if not user_matches:
         await message.answer(
             "Kiritilgan javoblar formati noto'g'ri. "
         )
         return
-        
+
     def create_answer_dict(matches):
         result_dict = {}
         for pair in matches:
-            question_num = pair[:-1] 
-            answer_char = pair[-1]   
+            question_num = pair[:-1]
+            answer_char = pair[-1]
             result_dict[question_num] = answer_char
         return result_dict
 
@@ -437,10 +477,10 @@ async def process_user_answers(message: Message, state: FSMContext, session_fact
     for question_num, correct_answer in correct_dict.items():
         if question_num in user_dict and user_dict[question_num] == correct_answer:
             correct_count += 1
-            
-    incorrect_count = total_questions - correct_count   
+
+    incorrect_count = total_questions - correct_count
     creator_id = None
-    registered_user_name = "Ro'yxatdan o'tmagan foydalanuvchi ‼️" 
+    registered_user_name = "Ro'yxatdan o'tmagan foydalanuvchi ‼️"
     test_title = "Noma'lum test"
 
     async with session_factory() as session:
@@ -464,16 +504,16 @@ async def process_user_answers(message: Message, state: FSMContext, session_fact
         if test_info:
             creator_id = test_info.creator_id
             test_title = test_info.title
-        
+
         user_info = await get_user(session, message.from_user.id)
         if user_info and user_info.first_name:
             registered_user_name = f"{user_info.first_name} {user_info.last_name or ''}".strip()
         else:
             registered_user_name = message.from_user.full_name
-            
+
         try:
             await add_new_result(
-                session=session, 
+                session=session,
                 user_id=message.from_user.id,
                 test_id=test_id,
                 correct_count=correct_count,
@@ -482,7 +522,7 @@ async def process_user_answers(message: Message, state: FSMContext, session_fact
             )
         except Exception as e:
             logger.error("Error saving result to DB: %s", e)
-            
+
     if creator_id:
         creator_notification_message = (
             f"<b> YANGI NATIJA </b> \n\n"
@@ -495,7 +535,6 @@ async def process_user_answers(message: Message, state: FSMContext, session_fact
         except Exception as e:
             logger.error("Error sending notification to creator %s: %s", creator_id, e)
 
-    
     if not 'test_title' in locals():
         test_title = test_info.title if test_info else "Noma'lum test"
 
@@ -524,10 +563,10 @@ async def start_finish_test_handler(message: Message, state: FSMContext):
 
 @router.message(CheckStates.waiting_for_finish_code, F.text, IsSubscribed())
 async def process_finish_test_code(
-    message: Message, 
-    state: FSMContext, 
-    session_factory: async_sessionmaker[AsyncSession], 
-    bot: Bot
+        message: Message,
+        state: FSMContext,
+        session_factory: async_sessionmaker[AsyncSession],
+        bot: Bot
 ):
     test_code = message.text.strip()
 
@@ -547,22 +586,22 @@ async def process_finish_test_code(
 
     async with session_factory() as session:
         test_data = await get_test_by_id(session, test_code)
-        
+
         if not test_data or test_data.creator_id != message.from_user.id:
             await message.answer("Kechirasiz, bu kod bilan test topilmadi yoki siz uning muallifi emassiz.")
             await state.clear()
             await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
             return
 
-        if not test_data.status: 
+        if not test_data.status:
             await message.answer("❗️ Test allaqachon yakunlangan.")
             await state.clear()
             await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
             return
-            
+
         creator_user = await get_user(session, test_data.creator_id)
         creator_name = f"{creator_user.first_name} {creator_user.last_name or ''}".strip() if creator_user and creator_user.first_name else "Noma'lum"
-        
+
         try:
             results = await get_test_results_with_users(session, test_code)
             user_ids_who_passed = await get_unique_user_ids_for_test(session, test_code)
@@ -576,9 +615,9 @@ async def process_finish_test_code(
         is_deactivated = await deactivate_test(session, test_code)
 
     result_list = []
-    #current_rank = 0
-    #last_correct_count = -1
-    #rank_count = 0
+    # current_rank = 0
+    # last_correct_count = -1
+    # rank_count = 0
     sorted_results_for_ranking = sorted(results, key=lambda x: x[4], reverse=True)
 
     for index, res_tuple in enumerate(sorted_results_for_ranking):
@@ -651,7 +690,7 @@ async def process_finish_test_code(
                     parse_mode='HTML'
                 )
                 logger.info(f"Excel report for test {test_code} sent to creator {message.from_user.id}.")
-                
+
                 os.remove(excel_path)
                 logger.info(f"Excel report file removed: {excel_path}")
             except Exception as e:
@@ -666,11 +705,11 @@ async def process_finish_test_code(
     )
 
     await state.update_data(
-        all_results=results, 
-        all_user_ids=user_ids_who_passed, 
+        all_results=results,
+        all_user_ids=user_ids_who_passed,
         test_title=test_data.title,
         test_code=test_code,
-        creator_name=creator_name, 
+        creator_name=creator_name,
         final_report=final_report,
     )
 
@@ -691,18 +730,19 @@ async def process_finish_test_code(
 
         await state.set_state(CheckStates.waiting_for_pagination)
         new_msg_id = await send_cert_template(
-            bot=bot, 
-            chat_id=message.chat.id, 
+            bot=bot,
+            chat_id=message.chat.id,
             current_index=0
         )
-        
+
         await state.update_data(
-            current_cert_index=0, 
+            current_cert_index=0,
             cert_msg_id=new_msg_id
         )
     else:
         await message.answer("Testni hech kim ishlamaganligi sababli sertifikat yaratilmadi.", reply_markup=mainMenu)
         await state.clear()
+
 
 @router.callback_query(F.data.startswith("cert_nav"), CheckStates.waiting_for_pagination)
 async def handle_cert_navigation(callback: CallbackQuery, state: FSMContext, bot: Bot):
@@ -711,26 +751,26 @@ async def handle_cert_navigation(callback: CallbackQuery, state: FSMContext, bot
     if len(parts) != 3:
         await callback.answer("Xato: Noto'g'ri navigatsiya ma'lumoti.")
         return
-        
+
     action, direction, current_index_raw = parts
 
     current_index = int(current_index_raw)
     data = await state.get_data()
     cert_msg_id = data.get('cert_msg_id')
     new_index = current_index
-    
+
     if direction == "prev":
-        new_index = (current_index - 1) % len(CERT_IDS) 
+        new_index = (current_index - 1) % len(CERT_IDS)
     elif direction == "next":
         new_index = (current_index + 1) % len(CERT_IDS)
-        
+
     if new_index != current_index:
-        
+
         try:
             new_msg_id = await send_cert_template(
-                bot=bot, 
-                chat_id=callback.message.chat.id, 
-                current_index=new_index, 
+                bot=bot,
+                chat_id=callback.message.chat.id,
+                current_index=new_index,
                 msg_id=cert_msg_id
             )
 
@@ -747,9 +787,8 @@ async def handle_cert_navigation(callback: CallbackQuery, state: FSMContext, bot
         await callback.answer()
 
 
-
 @router.callback_query(F.data.startswith("cert_select"), CheckStates.waiting_for_pagination)
-async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot: Bot): 
+async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot: Bot):
     selected_cert_id_raw = callback.data.split(":")[1]
     selected_cert_id = int(selected_cert_id_raw)
     data = await state.get_data()
@@ -761,7 +800,7 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
         await bot.delete_message(callback.message.chat.id, cert_msg_id)
     except Exception as e:
         logger.error(f"Xabarni o'chirishda xato: {e}")
-        
+
     await callback.answer("Tanlov qabul qilindi...")
 
     if selected_cert_id == 0:
@@ -773,9 +812,9 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
     test_title: str = data.get('test_title', "Fan")
     creator_name: str = data.get('creator_name', "Noaniq O'qituvchi")
     test_code: str = data.get('test_code', "Noma'lum")
-    sorted_results = sorted(results, key=lambda x: (x[4], x[4]/x[5] if x[5] else 0), reverse=True)
+    sorted_results = sorted(results, key=lambda x: (x[4], x[4] / x[5] if x[5] else 0), reverse=True)
     created_certs = []
-    
+
     for rank_idx, res in enumerate(sorted_results):
         user_id_res, first_name, last_name, _, correct, total, _ = res
         full_name = f"{first_name} {last_name or ''}".strip()
@@ -827,19 +866,52 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
         )
 
         # 4. Yuborish va Tozalash
-        if pdf_path and os.path.exists(pdf_path):
+        if pdf_path and isinstance(pdf_path, str) and pdf_path.startswith("TOO_LARGE:"):
+            # PDF hajmi Telegram limitidan katta
+            pdf_size_mb = int(pdf_path.split(":")[1]) // 1024 // 1024
+            logger.error(f"PDF {pdf_size_mb} MB — Telegram limiti (49 MB) oshdi, yuborilmadi.")
+            await callback.message.answer(
+                f"⚠️ Sertifikatlar PDF fayli juda katta ({pdf_size_mb} MB).\n"
+                f"Telegram 50 MB dan katta fayllarni qabul qilmaydi.\n\n"
+                f"Sertifikatlar alohida-alohida yuboriladi...",
+            )
+            # Sertifikatlarni alohida yuborish (bo'laklab)
+            sent = 0
+            for idx, cert_path in enumerate(temp_cert_paths, 1):
+                if not os.path.exists(cert_path):
+                    continue
+                try:
+                    await bot.send_document(
+                        chat_id=callback.from_user.id,
+                        document=FSInputFile(cert_path),
+                        caption=f"🏆 Sertifikat {idx}/{len(temp_cert_paths)} — {test_title}",
+                    )
+                    sent += 1
+                    if idx % 15 == 0:
+                        await asyncio.sleep(1)  # Rate limit uchun pauza
+                except Exception as e:
+                    logger.error(f"Sertifikat {idx} yuborishda xato: {e}", exc_info=True)
+            await callback.message.answer(f"✅ {sent} ta sertifikat alohida yuborildi.")
+
+        elif pdf_path and os.path.exists(pdf_path):
             try:
+                pdf_size_mb = os.path.getsize(pdf_path) // 1024 // 1024
                 await bot.send_document(
                     chat_id=callback.from_user.id,
                     document=FSInputFile(pdf_path),
-                    caption=f"📄 Barcha {len(temp_cert_paths)} ta sertifikatlar <b>{test_title}</b> testi uchun bitta PDF faylda.",
+                    caption=f"📄 Barcha {len(temp_cert_paths)} ta sertifikatlar <b>{test_title}</b> testi uchun bitta PDF faylda. ({pdf_size_mb} MB)",
                     parse_mode='HTML',
-                    request_timeout=300  # <--- SHU QISM: 5 daqiqa (300 soniya) vaqt beramiz
                 )
-                logger.info(f"PDF certificate archive sent to creator {callback.from_user.id}")
+                logger.info(f"PDF ({pdf_size_mb} MB) muvaffaqiyatli yuborildi: creator={callback.from_user.id}")
             except Exception as e:
-                logger.error(f"PDF ni yuborishda xato: {e}")
-                await callback.message.answer("⚠️ PDF arxivni yuborishda xato yuz berdi (Timeout bo'lishi mumkin).")
+                logger.error(f"PDF yuborishda xato: {type(e).__name__}: {e}", exc_info=True)
+                await callback.message.answer(
+                    f"⚠️ PDF yuborishda xato yuz berdi: {type(e).__name__}\n"
+                    f"Loglarni tekshiring: /home/bot/logs/bot.log"
+                )
+        else:
+            logger.error(f"PDF fayl topilmadi: {pdf_path}")
+            await callback.message.answer("⚠️ PDF yaratishda xato yuz berdi. Loglarni tekshiring.")
 
         # Fayllar va papkani o'chirish (try...finally emas, balki qulaylik uchun oxirida)
         if os.path.exists(temp_dir):
@@ -860,8 +932,6 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
     await state.clear()
 
 
-
 @router.message(Command("menu"))
 async def start_create_test_handler(message: Message):
     await message.answer("👇 Asosiy menyu 👇", reply_markup=mainMenu)
-

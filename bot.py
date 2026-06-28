@@ -13,10 +13,18 @@ from src.handlers.registration import set_default_commands
 logger = logging.getLogger(__name__)
 
 async def main():
+    import os
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(filename)s:%(lineno)d #%(levelname)-8s "
                "[%(asctime)s] - %(name)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(),                                        # stdout (Docker logs)
+            logging.FileHandler(f"{log_dir}/bot.log", encoding="utf-8"),    # Fayl (server da saqlanadi)
+        ]
     )
 
     logger.info("Starting bot")
