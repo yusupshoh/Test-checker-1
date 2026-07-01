@@ -357,9 +357,11 @@ async def save_new_test(
                 ]
             )
 
+            questions_count = len(re.findall(r'\d+[a-z]', test_answer))
             await message.answer(
                 f"Fan: <b>{test_title}</b>\n"
                 f"Id: <i><code>{new_test.id}</code></i>\n"
+                f"Savollar soni: <b>{questions_count} ta</b>\n"
                 f"Foydalanuvchilar bu ID orqali testni ishlay olishadi.\n\n"
                 f"👇 Pastagi tugma orqali testni yakunlanishigacha necha kishi ishlagani va kim nechinchi o'rinda turganini bilsangiz bo'ladi",
                 parse_mode='HTML',
