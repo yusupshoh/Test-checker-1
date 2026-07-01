@@ -339,8 +339,25 @@ async def save_new_test(
     creator_id = message.from_user.id
     test_answer = user_answer_key
 
+    if not test_title:
+        await message.answer(
+            "⚠️ Test ma'lumotlari topilmadi (bot qayta ishga tushgan bo'lishi mumkin).\n"
+            "Iltimos, testni qaytadan boshlang: /new_test",
+            reply_markup=mainMenu
+        )
+        await state.clear()
+        return
+
     async with session_factory() as session:
         try:
+            # Bot restart bo'lsa test_id state'dan yo'qoladi — shu holda yangisini generatsiya qilamiz
+            if new_test_id is None:
+                new_test_id = await generate_test_id(session)
+                logger.warning(
+                    f"test_id state'dan topilmadi (bot restart?), "
+                    f"yangi ID yaratildi: {new_test_id}, creator: {creator_id}"
+                )
+
             new_test = await add_new_test(
                 session=session,
                 test_id=new_test_id,
