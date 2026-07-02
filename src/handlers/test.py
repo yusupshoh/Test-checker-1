@@ -339,8 +339,25 @@ async def save_new_test(
     creator_id = message.from_user.id
     test_answer = user_answer_key
 
+    if not test_title:
+        await message.answer(
+            "⚠️ Test ma'lumotlari topilmadi (bot qayta ishga tushgan bo'lishi mumkin).\n"
+            "Iltimos, testni qaytadan boshlang: /new_test",
+            reply_markup=mainMenu
+        )
+        await state.clear()
+        return
+
     async with session_factory() as session:
         try:
+            # Bot restart bo'lsa test_id state'dan yo'qoladi — shu holda yangisini generatsiya qilamiz
+            if new_test_id is None:
+                new_test_id = await generate_test_id(session)
+                logger.warning(
+                    f"test_id state'dan topilmadi (bot restart?), "
+                    f"yangi ID yaratildi: {new_test_id}, creator: {creator_id}"
+                )
+
             new_test = await add_new_test(
                 session=session,
                 test_id=new_test_id,
@@ -357,9 +374,11 @@ async def save_new_test(
                 ]
             )
 
+            questions_count = len(re.findall(r'\d+[a-z]', test_answer))
             await message.answer(
                 f"Fan: <b>{test_title}</b>\n"
                 f"Id: <i><code>{new_test.id}</code></i>\n"
+                f"Savollar soni: <b>{questions_count} ta</b>\n"
                 f"Foydalanuvchilar bu ID orqali testni ishlay olishadi.\n\n"
                 f"👇 Pastagi tugma orqali testni yakunlanishigacha necha kishi ishlagani va kim nechinchi o'rinda turganini bilsangiz bo'ladi",
                 parse_mode='HTML',
@@ -853,8 +872,9 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
         await callback.message.answer(
             f"✅ Jami {len(temp_cert_paths)} ta sertifikat yaratildi. PDF shaklida yuborilmoqda...")
 
-        temp_dir = "temp_certs"
-        os.makedirs(temp_dir, exist_ok=True)  # Papka mavjudligini ta'minlash
+        # Har bir admin uchun alohida papka — bir vaqtda ikkita admin ishlasa fayllari aralashmasin
+        temp_dir = f"temp_certs_{callback.from_user.id}"
+        os.makedirs(temp_dir, exist_ok=True)
         pdf_filename = f"Sertifikatlar_{test_code}.pdf"
         output_pdf_path = os.path.join(temp_dir, pdf_filename)
 
@@ -901,14 +921,36 @@ async def handle_cert_selection(callback: CallbackQuery, state: FSMContext, bot:
                     document=FSInputFile(pdf_path),
                     caption=f"📄 Barcha {len(temp_cert_paths)} ta sertifikatlar <b>{test_title}</b> testi uchun bitta PDF faylda. ({pdf_size_mb} MB)",
                     parse_mode='HTML',
+                    request_timeout=300,  # 5 daqiqa — katta fayllar uchun
                 )
                 logger.info(f"PDF ({pdf_size_mb} MB) muvaffaqiyatli yuborildi: creator={callback.from_user.id}")
             except Exception as e:
                 logger.error(f"PDF yuborishda xato: {type(e).__name__}: {e}", exc_info=True)
                 await callback.message.answer(
-                    f"⚠️ PDF yuborishda xato yuz berdi: {type(e).__name__}\n"
-                    f"Loglarni tekshiring: /home/bot/logs/bot.log"
+                    "⚠️ PDF yuborishda xato yuz berdi (tarmoq muammosi yoki timeout).\n"
+                    "Sertifikatlar alohida-alohida yuboriladi..."
                 )
+                # Fallback: har bir sertifikatni alohida yuborish
+                sent = 0
+                for idx, cert_path in enumerate(temp_cert_paths, 1):
+                    if not os.path.exists(cert_path):
+                        continue
+                    try:
+                        await bot.send_document(
+                            chat_id=callback.from_user.id,
+                            document=FSInputFile(cert_path),
+                            caption=f"🏆 Sertifikat {idx}/{len(temp_cert_paths)} — {test_title}",
+                            request_timeout=60,
+                        )
+                        sent += 1
+                        if idx % 15 == 0:
+                            await asyncio.sleep(1)
+                    except Exception as e2:
+                        logger.error(f"Alohida sertifikat {idx} yuborishda xato: {e2}")
+                if sent > 0:
+                    await callback.message.answer(f"✅ {sent}/{len(temp_cert_paths)} ta sertifikat alohida yuborildi.")
+                else:
+                    await callback.message.answer("❌ Sertifikatlarni yuborib bo'lmadi. Loglarni tekshiring.")
         else:
             logger.error(f"PDF fayl topilmadi: {pdf_path}")
             await callback.message.answer("⚠️ PDF yaratishda xato yuz berdi. Loglarni tekshiring.")
