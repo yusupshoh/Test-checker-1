@@ -54,7 +54,7 @@ class BaseCertificateGenerator:
             img_width, _ = img.size
 
             congrats_text_final = (
-                f"Telegram botimiz orqali {subject} fanidan o`tkazilgan "
+                f"Telegram kanalimiz orqali {subject} fanidan o`tkazilgan "
                 f"testimizdan {result_percent}% natija ko'rsatgani uchun {teacher_name} tomonidan "
                 f"{rank}-o'rin bilan taqdirlandi"
             )
